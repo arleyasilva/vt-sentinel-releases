@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VT SENTINEL Config</title>
+  <meta name="description" content="Configuração e instalação do VT SENTINEL IoT pelo cabo USB">
+  <meta name="theme-color" content="#111111">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="top">
+    <img src="icons/icon-192.png" alt="" class="logo">
+    <div class="brand">
+      <strong>VT SENTINEL</strong> Config
+    </div>
+    <span id="conn" class="pill off">Desconectado</span>
+    <button id="btn-install-app" class="ghost" hidden>Instalar app</button>
+  </header>
+
+  <main>
+    <!-- Navegador sem Web Serial -->
+    <section id="v-unsupported" class="card center" hidden>
+      <h2>Navegador não suportado</h2>
+      <p>O acesso ao USB precisa do <b>Google Chrome</b> ou do <b>Microsoft Edge</b> no computador.</p>
+    </section>
+
+    <!-- Nada conectado -->
+    <section id="v-empty" class="card center" hidden>
+      <h2>Conecte o VT SENTINEL IoT no cabo USB</h2>
+      <p>Depois clique no botão e escolha a porta <b>USB-Enhanced-SERIAL CH9102</b>.
+        Na próxima vez ele é reconhecido sozinho ao conectar.</p>
+      <button id="btn-connect" class="primary big">Conectar aparelho</button>
+      <p class="muted small">Não aparece nenhuma porta? Instale o driver do CH9102 (WCH) e reconecte o cabo.</p>
+    </section>
+
+    <!-- Conectando -->
+    <section id="v-busy" class="card center" hidden>
+      <div class="spinner"></div>
+      <p id="busy-msg">Conectando…</p>
+    </section>
+
+    <!-- Aparelho novo / sem firmware -->
+    <section id="v-new" class="card" hidden>
+      <h2>Aparelho sem o VT SENTINEL</h2>
+      <p>Este CoreInk ainda não tem o firmware do VT SENTINEL IoT (ou não respondeu).
+        A instalação apaga o que estiver nele e grava a versão <b id="new-version">—</b>.</p>
+      <button id="btn-install-new" class="primary">Instalar VT SENTINEL</button>
+      <button id="btn-retry" class="ghost">Tentar conectar de novo</button>
+    </section>
+
+    <!-- Gravando -->
+    <section id="v-flash" class="card" hidden>
+      <h2>Instalando firmware</h2>
+      <p class="muted">Não desconecte o cabo.</p>
+      <progress id="flash-progress" max="1" value="0"></progress>
+      <pre id="flash-log" class="log"></pre>
+    </section>
+
+    <!-- Aparelho conectado -->
+    <section id="v-device" hidden>
+      <div class="card device">
+        <div class="device-head">
+          <div>
+            <div class="muted small" id="d-location">Aparelho</div>
+            <h2 id="d-name">—</h2>
+            <div class="muted small"><span id="d-id">—</span> · firmware <span id="d-fw">—</span></div>
+            <div class="muted small" id="d-sensors" hidden></div>
+          </div>
+          <div class="reading">
+            <div><span id="r-temp" class="big-num">—</span><span class="unit">°C</span></div>
+            <div><span id="r-hum" class="mid-num">—</span><span class="unit">%</span></div>
+            <div id="r-extra" class="muted small" hidden></div>
+          </div>
+        </div>
+
+        <div class="battery">
+          <div class="bat-head">
+            <span class="bat-icon" aria-hidden="true"><span id="b-fill"></span></span>
+            <b id="b-pct">—</b>
+            <span class="muted" id="b-volt"></span>
+            <span id="b-badge" class="badge" hidden></span>
+          </div>
+          <dl class="bat-grid">
+            <div><dt>Dias restantes</dt><dd id="b-days">—</dd></div>
+            <div><dt>Dura por carga</dt><dd id="b-autonomy">—</dd></div>
+            <div><dt>Saúde</dt><dd id="b-health">—</dd></div>
+            <div><dt>Ciclos</dt><dd id="b-cycles">—</dd></div>
+            <div><dt>Última carga completa</dt><dd id="b-full">—</dd></div>
+            <div><dt>Bateria trocada em</dt><dd id="b-replaced">—</dd></div>
+          </dl>
+        </div>
+
+        <div id="lock" class="lock">
+          <div>
+            <b>Alterações bloqueadas.</b>
+            <span class="muted">Para mudar algo, peça um código: ele aparece na tela do aparelho.</span>
+          </div>
+          <button id="btn-code" class="primary">Liberar alterações</button>
+          <form id="f-code" class="row" hidden>
+            <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="\d{6}" placeholder="000000" required>
+            <button class="primary">Liberar</button>
+          </form>
+        </div>
+      </div>
+
+      <nav id="tabs" class="tabs" hidden>
+        <button data-tab="ident" class="active">Aparelho</button>
+        <button data-tab="wifi">Wi-Fi</button>
+        <button data-tab="hub">Servidor</button>
+        <button data-tab="time">Data e hora</button>
+        <button data-tab="measure">Medição e tela</button>
+        <button data-tab="cal">Calibração</button>
+        <button data-tab="system">Sistema</button>
+      </nav>
+
+      <!-- Aparelho -->
+      <section data-panel="ident" class="card panel" hidden>
+        <h3>Identificação</h3>
+        <p class="muted small">O nome e o local aparecem aqui, no Hub e na API, para saber qual aparelho é qual.</p>
+        <form id="f-ident" class="grid">
+          <label>Nome do aparelho
+            <input id="i-name" maxlength="60" placeholder="ex.: Câmara fria 2">
+          </label>
+          <label>Local (opcional)
+            <input id="i-location" maxlength="120" placeholder="ex.: Loja Centro — estoque">
+          </label>
+          <div class="row"><button class="primary">Salvar</button></div>
+        </form>
+        <p id="ident-result" class="result"></p>
+      </section>
+
+      <!-- Wi-Fi -->
+      <section data-panel="wifi" class="card panel" hidden>
+        <h3>Redes salvas</h3>
+        <p class="muted small">Até 3 redes, tentadas em ordem (só as que estiverem ao alcance). As senhas nunca saem do aparelho.
+          <span id="wifi-hub-help">Cada rede pode ter o <b>seu servidor</b>: aparelho que anda entre lugares (casa, trabalho)
+          envia ao Hub de onde estiver. Em branco = servidor padrão da aba Servidor.</span></p>
+        <ul id="wifi-list" class="list"></ul>
+        <h3>Adicionar rede</h3>
+        <form id="f-wifi" class="grid">
+          <label>Nome da rede (SSID)
+            <input id="wifi-ssid" list="wifi-found" maxlength="32" required>
+            <datalist id="wifi-found"></datalist>
+          </label>
+          <label>Senha
+            <input id="wifi-pass" type="password" maxlength="64" autocomplete="new-password" placeholder="vazia para rede aberta">
+          </label>
+          <label id="wifi-hub-row">Servidor desta rede (opcional)
+            <input id="wifi-hub" type="url" placeholder="em branco = servidor padrão (aba Servidor)">
+          </label>
+          <div class="row">
+            <button type="button" id="btn-scan" class="ghost">Procurar redes</button>
+            <button class="primary">Salvar rede</button>
+            <button type="button" id="btn-wifi-test" class="ghost">Testar conexão</button>
+          </div>
+        </form>
+        <p id="wifi-result" class="result"></p>
+      </section>
+
+      <!-- Servidor -->
+      <section data-panel="hub" class="card panel" hidden>
+        <h3>Servidor VT SENTINEL (Hub)</h3>
+        <p class="muted small">Servidor padrão: para onde o aparelho envia as leituras quando a rede conectada não tem
+          servidor próprio (aba Wi-Fi), e de onde busca configuração e atualizações.
+          Para testar sem o Hub, use a API falsa: <code>http://IP-DO-PC:4010</code>.</p>
+        <form id="f-hub" class="grid">
+          <label>Endereço do Hub (padrão)
+            <input id="hub-url" type="url" placeholder="https://sentinel.suaempresa.com">
+          </label>
+          <label>Token do aparelho
+            <input id="hub-token" type="password" autocomplete="off" placeholder="deixe vazio para manter o atual">
+          </label>
+          <label>Endereço de atualização (opcional)
+            <input id="hub-upd" type="url" placeholder="padrão: GitHub (vt-sentinel-releases)">
+          </label>
+          <label>Canal de atualização
+            <select id="hub-channel"><option value="stable">estável</option><option value="beta">beta</option></select>
+          </label>
+          <div class="row">
+            <button class="primary">Salvar</button>
+            <button type="button" id="btn-hub-test" class="ghost">Testar servidor</button>
+          </div>
+        </form>
+        <div id="hub-nets-box">
+          <h3>Servidor de cada rede</h3>
+          <p class="muted small">Aparelho que anda entre lugares: cada rede envia para o seu Hub (ex.: casa e trabalho).
+            Em branco, a rede usa o servidor padrão acima. "Testar" conecta na rede e chama o servidor dela.</p>
+          <ul id="hub-nets" class="list"></ul>
+        </div>
+        <p id="hub-result" class="result"></p>
+      </section>
+
+      <!-- Data e hora -->
+      <section data-panel="time" class="card panel" hidden>
+        <h3>Data, hora e fuso</h3>
+        <dl class="kv">
+          <dt>Hora no aparelho</dt><dd id="t-device">—</dd>
+          <dt>Hora deste computador</dt><dd id="t-pc">—</dd>
+        </dl>
+        <form id="f-time" class="grid">
+          <label>Fuso horário
+            <input id="tz" list="tz-list" required>
+            <datalist id="tz-list"></datalist>
+          </label>
+          <p class="muted small">Regra enviada ao aparelho: <code id="tz-posix">—</code> (inclui horário de verão, quando houver).</p>
+          <div class="row">
+            <button class="primary">Acertar com a hora deste computador</button>
+          </div>
+        </form>
+        <p id="time-result" class="result"></p>
+      </section>
+
+      <!-- Medição e tela -->
+      <section data-panel="measure" class="card panel" hidden>
+        <h3>Medição e tela</h3>
+        <form id="f-measure" class="grid">
+          <label>Perfil de energia (na bateria)
+            <select id="m-profile">
+              <option value="economico">Econômico — mede a cada 15 min</option>
+              <option value="equilibrado">Equilibrado — a cada 10 min</option>
+              <option value="frequente">Frequente — a cada 5 min</option>
+              <option value="personalizado">Personalizado</option>
+            </select>
+          </label>
+          <label id="m-custom-wrap">Medir a cada (minutos, na bateria)
+            <input id="m-custom" type="number" min="1" max="1440" step="1">
+          </label>
+          <label>Medir a cada (minutos, no USB)
+            <input id="m-usb" type="number" min="1" max="1440" step="1">
+          </label>
+          <label>Título na tela
+            <input id="m-title" maxlength="16" required>
+          </label>
+          <label>Unidade
+            <select id="m-unit"><option value="C">Celsius (°C)</option><option value="F">Fahrenheit (°F)</option></select>
+          </label>
+          <label class="check"><input id="m-clock" type="checkbox"> Mostrar a hora da última medição (gasta um pouco mais de bateria)</label>
+          <label>Limpar a tela por completo a cada (medições) — tira o "fantasma" dos números
+            <input id="m-fullref" type="number" min="1" max="100" step="1">
+          </label>
+          <h3>Sensores da placa (HAT)</h3>
+          <p class="muted small">Tudo é reconhecido ao conectar: o ENV III no Grove de baixo, a placa HAT em cima,
+            a sonda DS18B20 e o sensor de porta (na primeira vez que a porta for fechada).</p>
+          <label>Sensor de porta
+            <select id="m-door">
+              <option value="auto">Automático — usa se estiver ligado</option>
+              <option value="on">Sempre ligado</option>
+              <option value="off">Desligado</option>
+            </select>
+          </label>
+          <label id="m-door-alert-wrap">Alertar porta aberta depois de (minutos)
+            <input id="m-door-alert" type="number" min="1" max="1440" step="1">
+          </label>
+          <div class="row"><button class="primary">Salvar</button></div>
+        </form>
+        <p id="measure-result" class="result"></p>
+      </section>
+
+      <!-- Calibração -->
+      <section data-panel="cal" class="card panel" hidden>
+        <h3>Calibração</h3>
+        <p class="muted small">O sensor vem calibrado de fábrica. Use só se, ao lado de um termo-higrômetro confiável,
+          houver diferença constante. O ajuste é somado à leitura.</p>
+        <form id="f-cal" class="grid">
+          <label>Ajuste de temperatura (°C, −5 a +5)
+            <input id="c-temp" type="number" min="-5" max="5" step="0.1">
+          </label>
+          <label>Ajuste de umidade (%, −10 a +10)
+            <input id="c-hum" type="number" min="-10" max="10" step="0.5">
+          </label>
+          <label>Ajuste da sonda (°C, −5 a +5)
+            <input id="c-probe" type="number" min="-5" max="5" step="0.1">
+          </label>
+          <label>Ligação do PT100
+            <select id="c-wires">
+              <option value="2">2 fios</option>
+              <option value="3">3 fios (fechar o jumper de 3 fios na placa MAX31865)</option>
+              <option value="4">4 fios</option>
+            </select>
+          </label>
+          <div class="row"><button class="primary">Salvar</button></div>
+        </form>
+        <p id="cal-result" class="result"></p>
+      </section>
+
+      <!-- Sistema -->
+      <section data-panel="system" class="card panel" hidden>
+        <h3>Sistema</h3>
+        <dl id="sys-info" class="kv"></dl>
+        <div class="row wrap">
+          <button id="btn-reboot" class="ghost">Reiniciar aparelho</button>
+          <button id="btn-reflash" class="ghost">Reinstalar firmware <span id="sys-avail"></span></button>
+        </div>
+        <h3>Atualização pela internet</h3>
+        <p class="muted small">Com Wi-Fi configurado e o aparelho no USB, ele procura versões novas sozinho (ao conectar e a cada 6 h)
+          e só instala firmware assinado pelo VT SENTINEL. Se a versão nova falhar, volta para a anterior.</p>
+        <dl class="kv">
+          <dt>Origem</dt><dd id="ota-source">—</dd>
+          <dt>Versão disponível</dt><dd id="ota-available">—</dd>
+        </dl>
+        <label class="check"><input id="ota-auto" type="checkbox"> Atualizar automaticamente</label>
+        <div class="row wrap" style="margin-top:8px">
+          <button id="btn-ota-check" class="ghost">Verificar agora</button>
+          <button id="btn-ota-update" class="primary" hidden>Atualizar agora</button>
+        </div>
+        <progress id="ota-progress" max="100" value="0" hidden></progress>
+        <p id="ota-result" class="result"></p>
+        <h3>Troca de bateria</h3>
+        <p class="muted small">Depois de colocar uma bateria nova, registre a troca: zera os ciclos e a saúde, e o aparelho volta
+          a medir a autonomia do zero.</p>
+        <button id="btn-bat-replaced" class="ghost">Registrar troca de bateria</button>
+        <p id="bat-result" class="result"></p>
+        <h3>Reset de fábrica</h3>
+        <p class="muted small">Apaga Wi-Fi, servidor, token e configurações. Use se perdeu a senha ou não sabe mais como o aparelho
+          está configurado. Por segurança, é preciso apertar o <b>botão de cima</b> do aparelho para confirmar.</p>
+        <button id="btn-factory" class="danger">Apagar tudo</button>
+        <p id="sys-result" class="result"></p>
+      </section>
+    </section>
+  </main>
+
+  <footer class="muted small">VT SENTINEL Config · pelo cabo USB, sem precisar de Wi-Fi nem senha do painel</footer>
+</body>
+</html>
